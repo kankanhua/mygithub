@@ -36,12 +36,12 @@ import cn.edu.hfut.dmic.webcollector.util.RegexRule;
 import filter.entity.DishDetail;
 import filter.entity.DishType;
 
-public class DishTypeCrawler extends DeepCrawler {
+public class CopyOfDishTypeCrawler extends DeepCrawler {
 	private JdbcTemplate mTemplate = null;
 
 	private CrawlerDocParser mParser = new CrawlerDocParser();
 
-	public DishTypeCrawler(String crawlPath) {
+	public CopyOfDishTypeCrawler(String crawlPath) {
 		super(crawlPath);
 
 		mTemplate = JDBCHelper
@@ -58,7 +58,7 @@ public class DishTypeCrawler extends DeepCrawler {
 
 	private List<DishType> mDishTypeList = new ArrayList<DishType>();
 
-	private List<DishType> mSubDishTypeUrlList = new ArrayList<DishType>();
+	private List<String> mSubDishTypeUrlList = new ArrayList<String>();
 
 	public static final String BASE_URL = "http://www.meishij.net/";
 
@@ -74,24 +74,15 @@ public class DishTypeCrawler extends DeepCrawler {
 			synchronized (mDishTypeList) {
 				mDishTypeList.addAll(mParser.getPrimaryTypes(doc));
 
-				int id = 1;
+				List<Object[]> valuesList = new ArrayList<Object[]>();
 				for (DishType parentType : mDishTypeList) {
 					nextLinks.add(parentType.url);
 
-					if (!"食材百科".equals(parentType.name)) {
-						String update = "insert into dishtype (id, name,parentid, url) value(?,?,?,?)";
-						parentType.id = id++;
-						mTemplate.update(update, parentType.id,
-								parentType.name, 0, parentType.url);
-					} else {
-						String update = "insert into materialtype (id, name,parentid, url) value(?,?,?,?)";
-						parentType.id = id++;
-						mTemplate.update(update, parentType.id,
-								parentType.name, 0, parentType.url);
-					}
-
-					// break;
+					Object[] values = new Object[] { 3, parentType.url, url };
+					valuesList.add(values);
 				}
+				String update = "insert into urls (level,url,parenturl) value(?,?,?)";
+				mTemplate.batchUpdate(update, valuesList);
 			}
 		} else {
 			// 子分类 （家常菜私家菜凉菜....）
@@ -102,26 +93,19 @@ public class DishTypeCrawler extends DeepCrawler {
 					if (url.equals(parentType.url)) {
 						parentType.children = mParser.getChildrenTypes(doc);
 
+						List<Object[]> valuesList = new ArrayList<Object[]>();
 						for (DishType child : parentType.children) {
 							nextLinks.add(child.url);
 
-							child.parentName = parentType.name;
-
 							synchronized (mSubDishTypeUrlList) {
-								mSubDishTypeUrlList.add(child);
-							}
-							if (!"食材百科".equals(parentType.name)) {
-								String update = "insert into dishtype (name,parentid,url) value(?,?,?)";
-								mTemplate.update(update, child.name,
-										parentType.id, child.url);
-							} else {
-								String update = "insert into materialtype (name,parentid,url) value(?,?,?)";
-								mTemplate.update(update, child.name,
-										parentType.id, child.url);
+								mSubDishTypeUrlList.add(child.url);
 							}
 
-							// break;
+							Object[] values = new Object[] { 3, child.url, url };
+							valuesList.add(values);
 						}
+						String update = "insert into urls (level,url,parenturl) value(?,?,?)";
+						mTemplate.batchUpdate(update, valuesList);
 						isChildTypeUrl = true;
 						break;
 					}
@@ -134,40 +118,40 @@ public class DishTypeCrawler extends DeepCrawler {
 				boolean isSubDishTypeUrl = false;
 				synchronized (mSubDishTypeUrlList) {
 
-					for (DishType type : mSubDishTypeUrlList) {
-						if (url.contains(type.url + "&page=")
-								|| url.contains(type.url + "?&page=")
-								|| url.equals(type.url)) {
+					for (String typeUrl : mSubDishTypeUrlList) {
+						if (url.contains(typeUrl)) {
 							List<String> urls = mParser
 									.getDishTypeDetailPageUrls(doc, url,
-											url.equals(type.url));
+											url.equals(typeUrl));
 							isSubDishTypeUrl = true;
 							nextLinks.addAll(urls);
+
+							List<Object[]> valuesList = new ArrayList<Object[]>();
+							for (String detailUrl : urls) {
+
+								Object[] values = new Object[] { 3, detailUrl,
+										url };
+								valuesList.add(values);
+							}
+
+							String update = "insert into urls (level,url,parenturl) value(?,?,?)";
+							mTemplate.batchUpdate(update, valuesList);
 							break;
 						}
 					}
 				}
 
-				if (!isSubDishTypeUrl) {
-
-					// 菜谱详情
-					DishDetail detail = mParser.getDishDetail(doc, url);
-
-					if (!"食材百科".equals(detail.dishType)) {
-						mTemplate
-								.update("insert into dish (name,materials,steps,dishType,submaterials,level,quantity,method,url) value(?,?,?,?,?,?,?,?,?)",
-										detail.title, detail.mainMaterial,
-										detail.steps.toString(),
-										detail.dishType, detail.subMaterial,
-										detail.level, detail.quantity,
-										detail.method, url);
-					} else {
-						mTemplate
-								.update("insert into material (name,materialtype,url) value(?,?,?)",
-										detail.title, detail.dishType, url);
-					}
-
-				}
+				// if (!isSubDishTypeUrl) {
+				//
+				// // 菜谱详情
+				// DishDetail detail = mParser.getDishDetail(doc, url);
+				// mTemplate
+				// .update("insert into dish (name,materials,steps,dishType,submaterials,level,quantity,method,url) value(?,?,?,?,?,?,?,?,?)",
+				// detail.title, detail.mainMaterial,
+				// detail.steps.toString(), detail.dishType,
+				// detail.subMaterial, detail.level,
+				// detail.quantity, detail.method, url);
+				// }
 			}
 		}
 
@@ -188,14 +172,15 @@ public class DishTypeCrawler extends DeepCrawler {
 		 * 构造函数中的string,是爬虫的crawlPath，爬虫的爬取信息都存在crawlPath文件夹中,
 		 * 不同的爬虫请使用不同的crawlPath
 		 */
-		final DishTypeCrawler crawler = new DishTypeCrawler("F:\\cache1");
-		crawler.setThreads(80);
+		final CopyOfDishTypeCrawler crawler = new CopyOfDishTypeCrawler(
+				"F:\\cache");
+		crawler.setThreads(50);
 		// crawler.addSeed("http://www.meishij.net/chufang/diy/gaodianxiaochi/19547.html");
 		// crawler.addSeed("http://www.meishij.net/zuofa/baocaisichaomuer.html");
 		crawler.addSeed("http://www.meishij.net/");
 
 		/* 设置是否断点爬取 */
-		crawler.setResumable(false);
+		crawler.setResumable(true);
 
 		crawler.start(5);
 

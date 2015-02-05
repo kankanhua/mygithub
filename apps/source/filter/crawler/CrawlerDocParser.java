@@ -109,7 +109,7 @@ public class CrawlerDocParser {
 					System.out.println("pageSumElem = " + pageSumElem
 							+ ", url = " + url);
 				}
-				for (int i = 0; i < size; i++) {
+				for (int i = 2; i <= size; i++) {
 					String pageUrl = "";
 					if (url.contains("?")) {
 						pageUrl = url + "&page=" + i;
@@ -136,7 +136,7 @@ public class CrawlerDocParser {
 	protected DishDetail getOtherDishDetail(Document doc) {
 		DishDetail holder = new DishDetail();
 		Elements typeElement = doc
-				.select("body > div.main_w.clearfix > div.main.clearfix > ul > li:nth-child(5) > a");
+				.select("body > div.main_w.clearfix > div.main > ul > li:nth-child(5) > a");
 		holder.dishType = typeElement.text();
 
 		Elements titleElement = doc
