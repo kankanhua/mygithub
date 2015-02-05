@@ -1,5 +1,5 @@
 package filter.crawler;
 
-public class DbUtils {
+public class DetailParser {
 
 }

@@ -20,40 +20,26 @@ package filter.crawler;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import cn.edu.hfut.dmic.webcollector.crawler.DeepCrawler;
 import cn.edu.hfut.dmic.webcollector.model.Links;
 import cn.edu.hfut.dmic.webcollector.model.Page;
-import cn.edu.hfut.dmic.webcollector.util.JDBCHelper;
-import cn.edu.hfut.dmic.webcollector.util.RegexRule;
 import filter.entity.DishDetail;
 import filter.entity.DishType;
 
 public class DishTypeCrawler extends DeepCrawler {
-	private JdbcTemplate mTemplate = null;
+	// private JdbcTemplate mTemplate = null;
 
 	private CrawlerDocParser mParser = new CrawlerDocParser();
+
+	private DbUpdater mUpdater = new DbUpdater();
 
 	public DishTypeCrawler(String crawlPath) {
 		super(crawlPath);
 
-		mTemplate = JDBCHelper
-				.createMysqlTemplate(
-						"mysql1",
-						"jdbc:mysql://localhost:3306/food?useUnicode=true&characterEncoding=utf8",
-						"root", "root", 5, 30);
-
-		mTemplate.execute("CREATE TABLE IF NOT EXISTS dishtype ("
-				+ "id int(11) NOT NULL AUTO_INCREMENT,"
-				+ "name varchar(50),parentid int(11)," + "PRIMARY KEY (id)"
-				+ ") ENGINE=MyISAM DEFAULT CHARSET=utf8;");
+		mUpdater = new DbUpdater();
 	}
 
 	private List<DishType> mDishTypeList = new ArrayList<DishType>();
@@ -77,20 +63,8 @@ public class DishTypeCrawler extends DeepCrawler {
 				int id = 1;
 				for (DishType parentType : mDishTypeList) {
 					nextLinks.add(parentType.url);
-
-					if (!"食材百科".equals(parentType.name)) {
-						String update = "insert into dishtype (id, name,parentid, url) value(?,?,?,?)";
-						parentType.id = id++;
-						mTemplate.update(update, parentType.id,
-								parentType.name, 0, parentType.url);
-					} else {
-						String update = "insert into materialtype (id, name,parentid, url) value(?,?,?,?)";
-						parentType.id = id++;
-						mTemplate.update(update, parentType.id,
-								parentType.name, 0, parentType.url);
-					}
-
-					// break;
+					parentType.id = id++;
+					mUpdater.updateType(parentType);
 				}
 			}
 		} else {
@@ -105,22 +79,12 @@ public class DishTypeCrawler extends DeepCrawler {
 						for (DishType child : parentType.children) {
 							nextLinks.add(child.url);
 
-							child.parentName = parentType.name;
+							child.parentType = parentType;
 
 							synchronized (mSubDishTypeUrlList) {
 								mSubDishTypeUrlList.add(child);
 							}
-							if (!"食材百科".equals(parentType.name)) {
-								String update = "insert into dishtype (name,parentid,url) value(?,?,?)";
-								mTemplate.update(update, child.name,
-										parentType.id, child.url);
-							} else {
-								String update = "insert into materialtype (name,parentid,url) value(?,?,?)";
-								mTemplate.update(update, child.name,
-										parentType.id, child.url);
-							}
-
-							// break;
+							mUpdater.updateType(child);
 						}
 						isChildTypeUrl = true;
 						break;
@@ -149,24 +113,10 @@ public class DishTypeCrawler extends DeepCrawler {
 				}
 
 				if (!isSubDishTypeUrl) {
-
 					// 菜谱详情
 					DishDetail detail = mParser.getDishDetail(doc, url);
 
-					if (!"食材百科".equals(detail.dishType)) {
-						mTemplate
-								.update("insert into dish (name,materials,steps,dishType,submaterials,level,quantity,method,url) value(?,?,?,?,?,?,?,?,?)",
-										detail.title, detail.mainMaterial,
-										detail.steps.toString(),
-										detail.dishType, detail.subMaterial,
-										detail.level, detail.quantity,
-										detail.method, url);
-					} else {
-						mTemplate
-								.update("insert into material (name,materialtype,url) value(?,?,?)",
-										detail.title, detail.dishType, url);
-					}
-
+					mUpdater.updateDishDetail(detail);
 				}
 			}
 		}
@@ -174,57 +124,24 @@ public class DishTypeCrawler extends DeepCrawler {
 		return nextLinks;
 	}
 
+	private static final boolean TEST = false;
+
 	public static void main(String[] args) throws Exception {
+		if (!TEST) {
 
-		//
-		// String reg =
-		// "http://www.meishij.net/chufang/diy/jiangchangcaipu/.*page=.*";
-		// String str =
-		// "http://www.meishij.net/chufang/diy/jiangchangcaipu/?&page=21";
-		// System.out.println(str.matches(reg));
-		//
+			final DishTypeCrawler crawler = new DishTypeCrawler("F:\\cache1");
+			crawler.setThreads(50);
+			crawler.addSeed("http://www.meishij.net/");
+			crawler.setResumable(false);
+			crawler.start(5);
+		} else {
 
-		/*
-		 * 构造函数中的string,是爬虫的crawlPath，爬虫的爬取信息都存在crawlPath文件夹中,
-		 * 不同的爬虫请使用不同的crawlPath
-		 */
-		final DishTypeCrawler crawler = new DishTypeCrawler("F:\\cache1");
-		crawler.setThreads(80);
-		// crawler.addSeed("http://www.meishij.net/chufang/diy/gaodianxiaochi/19547.html");
-		// crawler.addSeed("http://www.meishij.net/zuofa/baocaisichaomuer.html");
-		crawler.addSeed("http://www.meishij.net/");
+			final DishTypeCrawler crawler = new DishTypeCrawler("F:\\cache1");
+			crawler.setThreads(1);
+			crawler.addSeed("http://www.meishij.net/china-food/xiaochi/qinghai/18194.html");
+			crawler.setResumable(false);
+			crawler.start(1);
+		}
 
-		/* 设置是否断点爬取 */
-		crawler.setResumable(false);
-
-		crawler.start(5);
-
-		// new Thread() {
-		// public void run() {
-		// try {
-		// Thread.sleep(10000);
-		// } catch (InterruptedException e) {
-		// // TODO Auto-generated catch block
-		// e.printStackTrace();
-		// }
-		//
-		// for (DishType holder : crawler.mDishTypeList) {
-		// System.out.println("----------------------------------");
-		// System.out.println("名称：" + holder.name + ", url："
-		// + holder.url + ", 子分类：");
-		//
-		// // String update =
-		// // "insert into dishtype (id, name,parentid) value(?,?,?)";
-		//
-		// // dest.update(update, id, holder.name, 0);
-		//
-		// for (DishType child : holder.children) {
-		// System.out.println("        名称：" + child.name
-		// + ", url：" + child.url);
-		// }
-		// System.out.println("----------------------------------");
-		// }
-		// };
-		// }.start();
 	}
 }
